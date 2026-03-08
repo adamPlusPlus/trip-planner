@@ -1,0 +1,64 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900;
+  }
+}
+
+@layer components {
+  .markdown-content {
+    @apply max-w-none;
+  }
+  
+  .markdown-content h1 {
+    @apply text-3xl font-bold mb-4 mt-6 text-gray-900;
+  }
+  
+  .markdown-content h2 {
+    @apply text-2xl font-semibold mb-3 mt-5 text-gray-800;
+  }
+  
+  .markdown-content h3 {
+    @apply text-xl font-semibold mb-2 mt-4 text-gray-800;
+  }
+  
+  .markdown-content p {
+    @apply mb-4 text-gray-700 leading-relaxed;
+  }
+  
+  .markdown-content ul, .markdown-content ol {
+    @apply mb-4 ml-6;
+  }
+  
+  .markdown-content li {
+    @apply mb-2 text-gray-700;
+  }
+  
+  .markdown-content code {
+    @apply bg-gray-100 px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+  
+  .markdown-content pre {
+    @apply bg-gray-100 p-4 rounded-lg overflow-x-auto mb-4;
+  }
+  
+  .markdown-content blockquote {
+    @apply border-l-4 border-primary-500 pl-4 italic my-4 text-gray-600;
+  }
+  
+  .markdown-content table {
+    @apply w-full border-collapse mb-4;
+  }
+  
+  .markdown-content th {
+    @apply bg-gray-100 border border-gray-300 px-4 py-2 text-left font-semibold;
+  }
+  
+  .markdown-content td {
+    @apply border border-gray-300 px-4 py-2;
+  }
+}
+
