@@ -1,6 +1,6 @@
-# Road Trip Planner
+# Trip Planner
 
-A modern web application for viewing and comparing road trip plans with real-time weather and location images.
+A modern web application for viewing and comparing trip plans with real-time weather and location images.
 
 ## Features
 

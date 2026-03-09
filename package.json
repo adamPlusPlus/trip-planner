@@ -7,11 +7,14 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "copy-files": "node copy-markdown-files.js",
-    "download-images": "node download-location-images.js",
+    "copy-files": "node scripts/copy-plans.js",
+    "download-images": "node scripts/download-location-images.js",
+    "download-headers": "node scripts/download-header-images.js",
+    "server": "node server/index.js",
     "setup": "npm run copy-files && npm run dev"
   },
   "dependencies": {
+    "express": "^4.21.0",
     "pexels": "^1.4.0",
     "qrcode.react": "^4.2.0",
     "react": "^18.2.0",

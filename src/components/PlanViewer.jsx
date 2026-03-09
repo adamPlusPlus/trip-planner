@@ -3,9 +3,17 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fetchWeather } from '../utils/api'
 import { getPlanContent } from '../utils/dataLoader'
-import { shouldShowImageForHeader, getImageForHeader } from '../utils/locationImageMap'
+import { shouldShowImageForHeader, getImageForHeader, getLocalHeaderImage } from '../services/imageService'
+import { parseCheckboxContent, rebuildContent, formatForAppleNotes } from '../utils/shoppingList'
+import GeneratedPlanView from './GeneratedPlanView'
+import { generateSectionContent } from '../utils/planGenerators'
+import ThingsToSeeView from './plan-sections/ThingsToSeeView'
+import PotentialRoutesView from './plan-sections/PotentialRoutesView'
+import AccommodationsView from './plan-sections/AccommodationsView'
+import BudgetSummaryView from './plan-sections/BudgetSummaryView'
+import WeatherRouteView from './plan-sections/WeatherRouteView'
 
-const PlanViewer = ({ category, plan, onPlanSelect }) => {
+const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip }) => {
   const [content, setContent] = useState('')
   const [loading, setLoading] = useState(true)
   const [images, setImages] = useState({}) // { location: { url, query } }
@@ -20,13 +28,34 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
     return `https://www.google.com/maps/search/?api=1&query=${encoded}`
   }
 
+  const sectionType = plan?.sectionType || plan?.id?.replace(`${category?.id}-`, '') || ''
+
   useEffect(() => {
-    if (plan) {
+    if (plan?.path) {
       loadPlanContent(plan)
+    } else if (plan && !plan.path && category) {
+      const structuredSections = ['things-to-see', 'potential-routes', 'budget', 'accommodations', 'weather', 'pre-shopping-packing']
+      if (structuredSections.includes(sectionType)) {
+        setContent('')
+        setLoading(false)
+      } else {
+        setLoading(true)
+        const dest = { id: category.id, name: category.name, location: category.location, coords: category.coords }
+        generateSectionContent(sectionType, dest, trip)
+          .then(({ content }) => {
+            setContent(content || '')
+            setLoading(false)
+          })
+          .catch((err) => {
+            console.error('Generate section failed:', err)
+            setContent(`# ${plan.name}\n\nCould not load this section.`)
+            setLoading(false)
+          })
+      }
     } else {
       loadCategoryPlans()
     }
-  }, [plan, category])
+  }, [plan, category, trip, sectionType])
 
   useEffect(() => {
     if (category) {
@@ -70,103 +99,6 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
   const isShoppingList = plan?.name?.toLowerCase().includes('shopping') || 
                         plan?.name?.toLowerCase().includes('packing')
   
-  // Parse markdown content to extract checkbox items
-  const parseCheckboxContent = (text) => {
-    const lines = text.split('\n')
-    const sections = []
-    let currentSection = null
-    
-    lines.forEach((line) => {
-      // Check if it's a header
-      if (line.match(/^#{1,6}\s+/)) {
-        if (currentSection) {
-          sections.push(currentSection)
-        }
-        currentSection = {
-          type: 'header',
-          level: line.match(/^#+/)[0].length,
-          text: line.replace(/^#+\s+/, ''),
-          items: []
-        }
-      } else if (line.trim().startsWith('- [ ]') || line.trim().startsWith('- [x]') || line.trim().startsWith('- [X]')) {
-        if (!currentSection) {
-          currentSection = { type: 'section', text: '', items: [] }
-        }
-        const checked = line.includes('[x]') || line.includes('[X]')
-        const itemText = line.replace(/^-\s*\[[xX\s]\]\s*/, '')
-        currentSection.items.push({
-          checked,
-          text: itemText,
-          originalLine: line
-        })
-      } else if (line.trim() && currentSection) {
-        // Regular text line within a section
-        currentSection.items.push({
-          type: 'text',
-          text: line
-        })
-      } else if (line.trim() && !currentSection) {
-        // Text before any section
-        if (!sections.length || sections[sections.length - 1].type !== 'text') {
-          sections.push({ type: 'text', text: line })
-        } else {
-          sections[sections.length - 1].text += '\n' + line
-        }
-      }
-    })
-    
-    if (currentSection) {
-      sections.push(currentSection)
-    }
-    
-    return sections
-  }
-  
-  // Rebuild content from sections
-  const rebuildContent = (sections) => {
-    let newContent = ''
-    sections.forEach(sec => {
-      if (sec.type === 'header') {
-        newContent += '#'.repeat(sec.level) + ' ' + sec.text + '\n\n'
-        // Add items if they exist
-        if (sec.items && sec.items.length > 0) {
-          sec.items.forEach(item => {
-            if (item.type === 'text') {
-              newContent += item.text + '\n'
-            } else {
-              const checkbox = item.checked ? 'x' : ' '
-              newContent += `- [${checkbox}] ${item.text}\n`
-            }
-          })
-          newContent += '\n'
-        }
-      } else if (sec.type === 'text') {
-        newContent += sec.text + '\n\n'
-      } else if (sec.items && sec.items.length > 0) {
-        // Section with items but no header
-        sec.items.forEach(item => {
-          if (item.type === 'text') {
-            newContent += item.text + '\n'
-          } else {
-            const checkbox = item.checked ? 'x' : ' '
-            // Add person tag if not both people
-            let itemText = item.text
-            if (item.people) {
-              if (item.people.length === 1) {
-                itemText = `${itemText} [${item.people[0]}]`
-              } else if (item.people.length === 2) {
-                // Both people - no tag needed (default)
-              }
-            }
-            newContent += `- [${checkbox}] ${itemText}\n`
-          }
-        })
-        newContent += '\n'
-      }
-    })
-    return newContent.trim() + '\n'
-  }
-  
   // Toggle checkbox state
   const toggleCheckbox = (sectionIndex, itemIndex) => {
     if (!isShoppingList || !plan) return
@@ -197,47 +129,6 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
     } catch (error) {
       console.error('Error toggling checkbox:', error)
     }
-  }
-  
-  // Format content for Apple Notes (clean markdown, remove person tags)
-  const formatForAppleNotes = (text) => {
-    const sections = parseCheckboxContent(text)
-    let formatted = ''
-    
-    sections.forEach(sec => {
-      if (sec.type === 'header') {
-        formatted += '#'.repeat(sec.level) + ' ' + sec.text + '\n\n'
-        if (sec.items && sec.items.length > 0) {
-          sec.items.forEach(item => {
-            if (item.type === 'text') {
-              formatted += item.text + '\n'
-            } else {
-              const checkbox = item.checked ? 'x' : ' '
-              // Remove person tags for clean Apple Notes format
-              const cleanText = item.text.replace(/\s*\[person1\]\s*/g, '').replace(/\s*\[person2\]\s*/g, '').replace(/\s*\[both\]\s*/g, '').trim()
-              formatted += `- [${checkbox}] ${cleanText}\n`
-            }
-          })
-          formatted += '\n'
-        }
-      } else if (sec.type === 'text') {
-        formatted += sec.text + '\n\n'
-      } else if (sec.items && sec.items.length > 0) {
-        sec.items.forEach(item => {
-          if (item.type === 'text') {
-            formatted += item.text + '\n'
-          } else {
-            const checkbox = item.checked ? 'x' : ' '
-            // Remove person tags for clean Apple Notes format
-            const cleanText = item.text.replace(/\s*\[person1\]\s*/g, '').replace(/\s*\[person2\]\s*/g, '').replace(/\s*\[both\]\s*/g, '').trim()
-            formatted += `- [${checkbox}] ${cleanText}\n`
-          }
-        })
-        formatted += '\n'
-      }
-    })
-    
-    return formatted.trim() + '\n'
   }
   
   // Copy list to clipboard (with mobile browser fallback)
@@ -353,7 +244,7 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
 
     try {
       // Load weather (async - needed for API call)
-      const weatherData = await fetchWeather(category.location, category.coords)
+      const weatherData = await fetchWeather(category.location, category.coords, dateRange)
       setWeather(weatherData)
 
       // Use local header image directly (no API call needed)
@@ -366,25 +257,6 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
     }
   }
   
-  // Helper to get local header image path
-  const getLocalHeaderImage = (destinationId) => {
-    const localImages = {
-      'pagosa-springs': '/images/headers/pagosa-springs.jpg',
-    }
-    // Try exact match first
-    if (localImages[destinationId]) {
-      return localImages[destinationId]
-    }
-    // Try partial match
-    const idLower = destinationId?.toLowerCase() || ''
-    for (const [key, path] of Object.entries(localImages)) {
-      if (idLower.includes(key) || key.includes(idLower)) {
-        return path
-      }
-    }
-    return null
-  }
-
   // Helper function to render heading with image above it
   // Only shows images for specific location headers, using local images
   const renderHeadingWithImage = (headingText, level, children, props) => {
@@ -409,11 +281,6 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
       } else if (children) {
         headerText = String(children)
       }
-    }
-    
-    // Debug logging (remove after testing)
-    if (headerText && (headerText.includes('State Park') || headerText.includes('National'))) {
-      console.log('Header text:', headerText, 'shouldShow:', shouldShowImageForHeader(headerText), 'imagePath:', getImageForHeader(headerText))
     }
     
     // Only show images for specific location headers
@@ -461,9 +328,12 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
   }
 
 
-  if (!plan && category?.plans) {
+  if (!plan && category) {
+    const hasGeneratedPlan = !category.plans?.length || category.plans.some((p) => !p.path)
+    if (hasGeneratedPlan) {
+      return <GeneratedPlanView category={category} trip={trip} onPlanSelect={onPlanSelect} />
+    }
     const mapsUrl = getGoogleMapsUrl(category.location || category.name)
-    
     return (
       <div>
         <div className="mb-8">
@@ -593,7 +463,25 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
       </div>
 
       <div className="bg-white rounded-lg shadow-md p-8 border border-gray-200">
-        {isShoppingList && (
+        {sectionType === 'things-to-see' && category && updateTrip && (
+          <ThingsToSeeView category={category} trip={trip} updateTrip={updateTrip} />
+        )}
+        {sectionType === 'potential-routes' && category && updateTrip && (
+          <PotentialRoutesView category={category} trip={trip} updateTrip={updateTrip} />
+        )}
+        {sectionType === 'accommodations' && category && updateTrip && (
+          <AccommodationsView category={category} trip={trip} updateTrip={updateTrip} />
+        )}
+        {sectionType === 'budget' && category && (
+          <BudgetSummaryView category={category} trip={trip} />
+        )}
+        {sectionType === 'weather' && category && (
+          <WeatherRouteView category={category} trip={trip} />
+        )}
+        {sectionType === 'pre-shopping-packing' && (
+          <p className="text-gray-500">Leave blank for now.</p>
+        )}
+        {!['things-to-see', 'potential-routes', 'accommodations', 'budget', 'weather', 'pre-shopping-packing'].includes(sectionType) && isShoppingList && (
           <div className="mb-4 flex justify-end">
             <button
               onClick={copyToClipboard}
@@ -607,7 +495,7 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
           </div>
         )}
         <div className="markdown-content">
-          {isShoppingList ? (
+          {!['things-to-see', 'potential-routes', 'accommodations', 'budget', 'weather', 'pre-shopping-packing'].includes(sectionType) && isShoppingList ? (
             <ShoppingListView 
               content={content}
               onToggleCheckbox={toggleCheckbox}
@@ -615,7 +503,7 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
               onAddItem={handleAddItem}
               onTogglePerson={handleTogglePerson}
             />
-          ) : (
+          ) : !['things-to-see', 'potential-routes', 'accommodations', 'budget', 'weather', 'pre-shopping-packing'].includes(sectionType) ? (
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
               components={{
@@ -690,7 +578,7 @@ const PlanViewer = ({ category, plan, onPlanSelect }) => {
           >
             {content}
           </ReactMarkdown>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -729,106 +617,7 @@ const ShoppingListView = ({ content, onToggleCheckbox, onTextEdit, onAddItem, on
     }
   }
   
-  const parseCheckboxContent = (text) => {
-    if (!text) return []
-    
-    const lines = text.split('\n')
-    const sections = []
-    let currentSection = null
-    
-    lines.forEach((line) => {
-      const trimmed = line.trim()
-      
-      // Skip empty lines
-      if (!trimmed) return
-      
-      // Check if it's a header
-      if (trimmed.match(/^#{1,6}\s+/)) {
-        if (currentSection) {
-          sections.push(currentSection)
-        }
-        currentSection = {
-          type: 'header',
-          level: trimmed.match(/^#+/)[0].length,
-          text: trimmed.replace(/^#+\s+/, ''),
-          items: []
-        }
-      } 
-      // Check if it's a checkbox item
-      else if (trimmed.startsWith('- [ ]') || trimmed.startsWith('- [x]') || trimmed.startsWith('- [X]')) {
-        if (!currentSection) {
-          currentSection = { type: 'section', text: '', items: [] }
-        }
-        const checked = trimmed.includes('[x]') || trimmed.includes('[X]')
-        // Check for person tags: [person1], [person2], [both]
-        let itemText = trimmed.replace(/^-\s*\[[xX\s]\]\s*/, '')
-        let people = ['person1', 'person2'] // Default to both people
-        
-        // Check for person tags in the text
-        if (itemText.includes('[person1]')) {
-          people = ['person1']
-          itemText = itemText.replace(/\[person1\]/g, '').trim()
-        } else if (itemText.includes('[person2]')) {
-          people = ['person2']
-          itemText = itemText.replace(/\[person2\]/g, '').trim()
-        } else if (itemText.includes('[both]')) {
-          people = ['person1', 'person2']
-          itemText = itemText.replace(/\[both\]/g, '').trim()
-        }
-        
-        currentSection.items.push({
-          checked,
-          text: itemText,
-          people: people
-        })
-      } 
-      // Regular text line within a section
-      else if (currentSection) {
-        currentSection.items.push({
-          type: 'text',
-          text: trimmed
-        })
-      } 
-      // Text before any section
-      else {
-        if (!sections.length || sections[sections.length - 1].type !== 'text') {
-          sections.push({ type: 'text', text: trimmed })
-        } else {
-          sections[sections.length - 1].text += '\n' + trimmed
-        }
-      }
-    })
-    
-    if (currentSection) {
-      sections.push(currentSection)
-    }
-    
-    return sections
-  }
-  
   const sections = parseCheckboxContent(content)
-  
-  // Debug logging
-  useEffect(() => {
-    if (content && sections.length > 0) {
-      console.log('Shopping list content length:', content.length)
-      console.log('Number of sections:', sections.length)
-      sections.forEach((sec, idx) => {
-        console.log(`Section ${idx}:`, {
-          type: sec.type,
-          text: sec.text,
-          itemsCount: sec.items?.length || 0,
-          headerMatch: sec.type === 'header' ? {
-            text: sec.text.toLowerCase(),
-            hasClothing: sec.text.toLowerCase().includes('clothing'),
-            hasPersonal: sec.text.toLowerCase().includes('personal'),
-            hasAmpersand: sec.text.toLowerCase().includes('&'),
-            matches: sec.text.toLowerCase().includes('clothing') && (sec.text.toLowerCase().includes('personal') || sec.text.toLowerCase().includes('&'))
-          } : null
-        })
-      })
-    }
-  }, [content, sections])
   
   const handleItemClick = (sectionIndex, itemIndex) => {
     const item = sections[sectionIndex]?.items[itemIndex]

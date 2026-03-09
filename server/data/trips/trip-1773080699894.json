@@ -1,0 +1,52 @@
+{
+  "id": "trip-1773080699894",
+  "name": "New Trip",
+  "origin": {
+    "name": "Houston, TX",
+    "location": "1912 West Dallas Street"
+  },
+  "endpoint": {
+    "name": "Pagosa Springs, Colorado"
+  },
+  "destinations": [
+    {
+      "id": "dest-1773083104917",
+      "name": "Test",
+      "location": "Dallas",
+      "coords": null,
+      "distance": null,
+      "description": null,
+      "category": null,
+      "budgetSlice": 1200,
+      "sections": [
+        {
+          "id": "budget-dest-1773083104917",
+          "type": "budget",
+          "name": "Budget",
+          "structured": {
+            "target": 1200,
+            "perDestination": {
+              "dest-1773083104917": 1200
+            }
+          }
+        }
+      ],
+      "plans": null,
+      "originDestinationId": null
+    }
+  ],
+  "settings": {
+    "dateRange": {
+      "start": "2026-03-20",
+      "end": "2026-03-23"
+    },
+    "costTarget": 1200,
+    "people": {
+      "count": 2,
+      "names": [
+        "Adam ",
+        "Misha"
+      ]
+    }
+  }
+}

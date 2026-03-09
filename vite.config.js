@@ -14,7 +14,10 @@ export default defineConfig({
     host: '0.0.0.0', // Listen on all network interfaces, not just localhost
     open: true,
     proxy: {
-      // Proxy markdown files from parent directories
+      '/api': {
+        target: 'http://localhost:5112',
+        changeOrigin: true,
+      },
       '/Road Trip': {
         target: 'http://localhost:8000',
         changeOrigin: true,

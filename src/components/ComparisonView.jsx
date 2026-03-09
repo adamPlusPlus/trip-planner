@@ -1,6 +1,6 @@
 import { useState } from 'react'
 
-const ComparisonView = ({ destinations, onNavigate }) => {
+const ComparisonView = ({ trip, destinations, onNavigate }) => {
   const [activeTab, setActiveTab] = useState('overview')
 
   // Extract comparison data from destinations
@@ -19,7 +19,7 @@ const ComparisonView = ({ destinations, onNavigate }) => {
     }
   })
 
-  // Helper function to get drive time from distance
+  // Helper function to get drive time from distance (miles)
   const getDriveTime = (dist) => {
     if (dist <= 400) return '5-7 hours'
     if (dist <= 600) return '7-9 hours'
@@ -29,60 +29,13 @@ const ComparisonView = ({ destinations, onNavigate }) => {
     return '15-18 hours'
   }
 
-  // Comprehensive data mapping for all destinations
-  const destinationData = {
-    'Pagosa Springs, Colorado': {
-      snow: 'High (Guaranteed)',
-      safety: 'Moderate to High Risk (US-160)',
-      attractions: 'Wolf Creek Ski Area, San Juan NF, Hot Springs',
-      fuel: '$108-120',
-      accommodation: '$100-180 (Holiday rates)',
-      budget4Nights: '$448-840',
-      budgetFriendly: 'Moderate',
-      route: 'I-40 W, US-285 S, US-160 W',
-      stopover: 'Yes (Amarillo/Palo Duro)',
-      passes: 'Yes (US-160)',
-      hazards: 'Moderate to High',
-      kitchen: 'Common (cabins, condos)',
-      nature: 'Many (forest, mountain)',
-      holidayPricing: 'Higher (Ski season)',
-      nationalParks: '0',
-      nationalForests: '1 (San Juan)',
-      stateParks: 'Multiple',
-      unique: 'World\'s deepest hot springs, Chimney Rock National Monument',
-    },
-  }
+  // Comparison data from destination objects only; no hardcoded map. Use "—" until trip has structured comparison data.
+  const getDestData = (_destName, _key) => '—'
 
-  // Helper to get data for a destination, with fallback
-  const getDestData = (destName, key) => {
-    return destinationData[destName]?.[key] || 'N/A'
-  }
-
-  // Destination to city/state mapping for Google Maps
-  const destinationAddresses = {
-    'Pagosa Springs, Colorado': 'Pagosa Springs, CO',
-  }
-
-  // Waypoints for routes that need stopovers
-  const routeWaypoints = {
-    'Pagosa Springs, Colorado': ['Amarillo, TX'],
-  }
-
-  // Generate Google Maps URL for a route
+  // Generate Google Maps URL for a route (trip origin + destination name)
   const getGoogleMapsUrl = (destName) => {
-    const origin = '1912 West Dallas Street, Houston, TX 77019'
-    const destination = destinationAddresses[destName] || destName
-    const waypoints = routeWaypoints[destName] || []
-
-    // Build URL with waypoints
-    let url = `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}`
-    
-    if (waypoints.length > 0) {
-      const waypointsStr = waypoints.map(wp => encodeURIComponent(wp)).join('|')
-      url += `&waypoints=${waypointsStr}`
-    }
-
-    return url
+    const origin = trip?.origin?.name || trip?.origin?.location || 'Houston, TX'
+    return `https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destName)}`
   }
 
   // Comparison tables data - dynamically built from all destinations
@@ -240,7 +193,7 @@ const ComparisonView = ({ destinations, onNavigate }) => {
   ]
 
   const renderComparisonTable = (data) => {
-    const destinations = comparisonData.map(d => d.name)
+    const destNames = comparisonData.map(d => d.name)
 
     return (
       <div className="overflow-x-auto">
@@ -250,7 +203,7 @@ const ComparisonView = ({ destinations, onNavigate }) => {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
                 Category
               </th>
-              {destinations.map(dest => (
+              {destNames.map(dest => (
                 <th key={dest} className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider border-b border-gray-200">
                   {dest}
                 </th>
@@ -263,7 +216,7 @@ const ComparisonView = ({ destinations, onNavigate }) => {
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                   {row.category}
                 </td>
-                {destinations.map(dest => {
+                {destNames.map(dest => {
                   const rowData = row.values.find(v => v.dest === dest)
                   const value = rowData?.value || 'N/A'
                   const link = rowData?.link
@@ -277,7 +230,6 @@ const ComparisonView = ({ destinations, onNavigate }) => {
                           onClick={(e) => {
                             if (isInternal) {
                               e.preventDefault()
-                              // Navigate using the app's navigation
                               if (onNavigate) {
                                 const destData = destinations.find(d => d.name === dest)
                                 const planId = getStopoverPlanId(destData?.id)
