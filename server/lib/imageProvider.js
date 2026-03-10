@@ -1,9 +1,10 @@
-// Image resolution: cache -> DuckDuckGo (stub) -> Pexels. Returns URL or null.
+// Image resolution: cache -> DuckDuckGo -> Pexels. Returns URL or null. Multi: resolveImageUrls returns string[].
 
 import fs from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
 import crypto from 'crypto'
+import { resolveDdgImageUrls, resolveDdgImageApi } from './duckduckgoImages.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const CACHE_DIR = path.resolve(__dirname, '..', 'cache', 'images')
@@ -39,9 +40,33 @@ function setCachedUrl(query, url) {
   fs.writeFileSync(metaPath, JSON.stringify({ query, url }), 'utf8')
 }
 
+function getCachedUrls(query) {
+  ensureCacheDir()
+  const key = cacheKey(query)
+  const multiPath = path.join(CACHE_DIR, `${key}-urls.json`)
+  if (!fs.existsSync(multiPath)) return null
+  try {
+    const meta = JSON.parse(fs.readFileSync(multiPath, 'utf8'))
+    return Array.isArray(meta.urls) ? meta.urls : null
+  } catch {
+    return null
+  }
+}
+
+function setCachedUrls(query, urls) {
+  if (!urls?.length) return
+  ensureCacheDir()
+  const key = cacheKey(query)
+  const multiPath = path.join(CACHE_DIR, `${key}-urls.json`)
+  fs.writeFileSync(multiPath, JSON.stringify({ query, urls }), 'utf8')
+}
+
 async function fetchDuckDuckGo(query) {
-  // Stub: DuckDuckGo image scrape can be added here. Return null to fall through to Pexels.
-  return null
+  try {
+    return await resolveDdgImageUrls(query)
+  } catch {
+    return null
+  }
 }
 
 async function fetchPexels(query) {
@@ -86,4 +111,37 @@ export async function resolveImageUrl(query) {
   }
 
   return null
+}
+
+/**
+ * Resolve up to limit image URLs for a query. Cache -> DuckDuckGo (first N) -> Pexels single as fallback.
+ * @param {string} query
+ * @param {number} limit
+ * @returns {Promise<string[]>}
+ */
+export async function resolveImageUrls(query, limit = 5) {
+  if (!query || typeof query !== 'string') return []
+  const q = query.trim()
+  if (!q) return []
+
+  const cached = getCachedUrls(q)
+  if (cached && cached.length > 0) {
+    return cached.slice(0, limit)
+  }
+
+  const list = await resolveDdgImageApi(q, limit)
+  const urls = list.map((r) => r.url).filter(Boolean)
+  if (urls.length > 0) {
+    setCachedUrls(q, urls)
+    return urls.slice(0, limit)
+  }
+
+  const single = await fetchPexels(q)
+  if (single) {
+    const arr = [single]
+    setCachedUrls(q, arr)
+    return arr
+  }
+
+  return []
 }

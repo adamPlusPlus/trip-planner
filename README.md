@@ -1,6 +1,6 @@
 # Trip Planner
 
-A modern web application for viewing and comparing trip plans with real-time weather and location images.
+A modern web application for viewing and comparing trip plans with real-time weather and location images. Routing uses OSRM and Leaflet with Open-Meteo geocoding—no API keys required for the map or directions.
 
 ## Features
 

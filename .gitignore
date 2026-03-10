@@ -26,6 +26,9 @@ dist-ssr
 # Commit script temp files
 git-commit-push-notes-*.txt
 
+# Windows reserved name (accidental file)
+nul
+
 # Environment / secrets
 .env
 .env.local

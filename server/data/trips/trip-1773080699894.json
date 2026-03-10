@@ -10,43 +10,93 @@
   },
   "destinations": [
     {
-      "id": "dest-1773083104917",
-      "name": "Test",
-      "location": "Dallas",
-      "coords": null,
+      "id": "dest-1773166087599",
+      "name": "atlanta",
+      "location": "Atlanta, Georgia, United States",
+      "coords": {
+        "lat": 33.749,
+        "lon": -84.38798
+      },
       "distance": null,
       "description": null,
       "category": null,
-      "budgetSlice": 1200,
+      "budgetSlice": 2000,
       "sections": [
         {
-          "id": "budget-dest-1773083104917",
+          "id": "budget-dest-1773166087599",
           "type": "budget",
           "name": "Budget",
           "structured": {
-            "target": 1200,
+            "target": 2000,
             "perDestination": {
-              "dest-1773083104917": 1200
+              "dest-1773166087599": 2000
             }
           }
         }
       ],
-      "plans": null,
-      "originDestinationId": null
+      "plans": [
+        {
+          "id": "dest-1773166087599-overview",
+          "name": "Overview",
+          "sectionType": "overview"
+        },
+        {
+          "id": "dest-1773166087599-things-to-see",
+          "name": "Things to See",
+          "sectionType": "things-to-see"
+        },
+        {
+          "id": "dest-1773166087599-potential-routes",
+          "name": "Potential Routes",
+          "sectionType": "potential-routes"
+        },
+        {
+          "id": "dest-1773166087599-budget",
+          "name": "Budget",
+          "sectionType": "budget"
+        },
+        {
+          "id": "dest-1773166087599-accommodations",
+          "name": "Accommodations",
+          "sectionType": "accommodations"
+        },
+        {
+          "id": "dest-1773166087599-pre-shopping-packing",
+          "name": "Pre-Shopping & Packing",
+          "sectionType": "pre-shopping-packing"
+        },
+        {
+          "id": "dest-1773166087599-weather",
+          "name": "Weather Conditions",
+          "sectionType": "weather"
+        }
+      ],
+      "originDestinationId": null,
+      "headerImageUrls": [
+        "https://images.pexels.com/photos/20747657/pexels-photo-20747657.jpeg?auto=compress&cs=tinysrgb&h=650&w=940"
+      ],
+      "headerImageIndex": 0,
+      "thingsToSee": {
+        "attractions": [],
+        "pointsOfInterest": []
+      }
     }
   ],
   "settings": {
     "dateRange": {
       "start": "2026-03-20",
-      "end": "2026-03-23"
+      "end": "2026-03-30"
     },
-    "costTarget": 1200,
+    "costTarget": 2000,
     "people": {
       "count": 2,
       "names": [
         "Adam ",
         "Misha"
       ]
-    }
-  }
+    },
+    "maxDrivingHours": 4,
+    "overnightFlexibility": 0.2
+  },
+  "lastModified": "2026-03-10T19:13:14.866Z"
 }

@@ -83,11 +83,31 @@ export const ROUTES_STRUCTURED = {
  */
 
 /**
+ * A single point the route goes through or near (for assessing attractiveness).
+ * @typedef {Object} RoutePoint
+ * @property {string} name
+ * @property {string} [location]
+ * @property {number} [order] - 0-based sequence along the route
+ * @property {string} [mapUrl]
+ */
+
+/**
+ * One route option (e.g. most direct, via attractions).
+ * @typedef {Object} RouteOption
+ * @property {string} id
+ * @property {string} name - e.g. "Most direct", "Via attractions"
+ * @property {RoutePoint[]} [points] - ordered points this route goes through/near
+ * @property {RouteSegment[]} segments
+ * @property {OvernightStop[]} [overnightStops]
+ */
+
+/**
  * @typedef {Object} DestinationRoute
  * @property {RouteSegment[]} segments
  * @property {OvernightStop[]} [overnightStops]
  * @property {number} [gasCostCents]
  * @property {number} [foodCostCents]
+ * @property {RouteOption[]} [routeOptions] - when multiple routes (direct, via waypoints)
  */
 
 /**

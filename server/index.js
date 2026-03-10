@@ -6,6 +6,8 @@ import { register as registerImage } from './routes/image.js'
 import { register as registerSearch } from './routes/search.js'
 import { register as registerPlaces } from './routes/places.js'
 import { register as registerDirections } from './routes/directions.js'
+import { register as registerDdgFirst } from './routes/ddgFirst.js'
+import { register as registerOsrm } from './routes/osrm.js'
 
 const app = express()
 const PORT = process.env.SERVER_PORT || 5112
@@ -17,6 +19,8 @@ registerImage(app)
 registerSearch(app)
 registerPlaces(app)
 registerDirections(app)
+registerDdgFirst(app)
+registerOsrm(app)
 
 app.listen(PORT, () => {
   console.log(`Server running at http://localhost:${PORT}`)

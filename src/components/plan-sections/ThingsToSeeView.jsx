@@ -58,12 +58,17 @@ export default function ThingsToSeeView({ category, trip, updateTrip }) {
   const [addName, setAddName] = useState('')
   const [autopopulating, setAutopopulating] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [autopopulateMessage, setAutopopulateMessage] = useState(null)
 
   useEffect(() => {
     const d = ensureThingsToSee(category)
     setAttractions(d.attractions || [])
     setPointsOfInterest(d.pointsOfInterest || [])
   }, [category?.id, category?.thingsToSee])
+
+  useEffect(() => {
+    setAutopopulateMessage(null)
+  }, [category?.id])
 
   const persist = (next) => {
     if (!trip || !updateTrip || !category) return
@@ -76,21 +81,30 @@ export default function ThingsToSeeView({ category, trip, updateTrip }) {
   const handleAutopopulate = async () => {
     if (!location.trim()) return
     setAutopopulating(true)
+    setAutopopulateMessage(null)
     try {
       const [attRes, poiRes] = await Promise.all([
         fetch(`${API}/places?location=${encodeURIComponent(location)}&type=attraction&limit=10`),
         fetch(`${API}/places?location=${encodeURIComponent(location)}&type=poi&limit=10`),
       ])
-      const attData = attRes.ok ? await attRes.json() : {}
-      const poiData = poiRes.ok ? await poiRes.json() : {}
+      if (!attRes.ok || !poiRes.ok) {
+        setAutopopulateMessage('Autopopulate failed. Is the server running? Check the backend on port 5112.')
+        return
+      }
+      const attData = await attRes.json().catch(() => ({}))
+      const poiData = await poiRes.json().catch(() => ({}))
       const nextAtt = attData.attractions || []
       const nextPoi = poiData.pointsOfInterest || []
       const next = { attractions: nextAtt, pointsOfInterest: nextPoi }
       setAttractions(nextAtt)
       setPointsOfInterest(nextPoi)
       persist(next)
+      if (nextAtt.length === 0 && nextPoi.length === 0) {
+        setAutopopulateMessage('No results this time. Try again in a moment or add by name.')
+      }
     } catch (e) {
       console.error('Autopopulate failed', e)
+      setAutopopulateMessage('Autopopulate failed. Check the console for details.')
     } finally {
       setAutopopulating(false)
     }
@@ -163,6 +177,11 @@ export default function ThingsToSeeView({ category, trip, updateTrip }) {
         >
           {autopopulating ? 'Loading…' : 'Autopopulate (10 attractions + 10 POIs)'}
         </button>
+        {autopopulateMessage && (
+          <p className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-md" role="status">
+            {autopopulateMessage}
+          </p>
+        )}
         <form onSubmit={handleAddByName} className="flex gap-2 flex-wrap">
           <input
             type="text"

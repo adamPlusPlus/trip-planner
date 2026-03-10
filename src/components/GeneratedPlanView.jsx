@@ -1,20 +1,20 @@
 import { useState, useEffect } from 'react'
 import { fetchWeather } from '../services/weatherService'
-import { getImageForLocation } from '../services/imageService'
+import { getImagesForLocation } from '../services/imageService'
 import { getDefaultPlansForDestination } from '../data/planTemplate'
 
 /**
  * List view for generated-plan destinations: same UX as Pagosa (header, weather, image, grid of cards).
- * Clicking a card calls onPlanSelect(planItem); full-screen content is handled by PlanViewer.
+ * Uses saved destination.headerImageUrls when present; fetches once and saves via updateTrip otherwise.
+ * Cycle through first 5 images; position (headerImageIndex) persisted between screens.
  */
-export default function GeneratedPlanView({ category, trip, onPlanSelect }) {
+export default function GeneratedPlanView({ category, trip, onPlanSelect, updateTrip }) {
   const planList = category?.plans?.length
     ? category.plans
     : getDefaultPlansForDestination(category?.id || 'dest').map((p) => ({ ...p, path: null }))
 
   const [weather, setWeather] = useState(null)
   const [weatherExpanded, setWeatherExpanded] = useState(false)
-  const [destinationImage, setDestinationImage] = useState(null)
 
   useEffect(() => {
     if (!category) return
@@ -25,14 +25,23 @@ export default function GeneratedPlanView({ category, trip, onPlanSelect }) {
     return () => { cancelled = true }
   }, [category?.id, category?.location, category?.coords, trip?.settings?.dateRange])
 
+  // Fetch header images once and save to trip if not already saved
   useEffect(() => {
     if (!category?.location && !category?.name) return
+    if (category?.headerImageUrls?.length) return // already saved
+    if (!updateTrip || !trip) return
     let cancelled = false
-    getImageForLocation(category.location || category.name, { destinationId: category.id })
-      .then((result) => { if (!cancelled && result?.url) setDestinationImage(result) })
-      .catch(() => { if (!cancelled) setDestinationImage(null) })
+    getImagesForLocation(category.location || category.name, { destinationId: category.id, limit: 5 })
+      .then((result) => {
+        if (cancelled || !result?.urls?.length) return
+        const dests = (trip.destinations || []).map((d) =>
+          d.id === category.id ? { ...d, headerImageUrls: result.urls, headerImageIndex: 0 } : d
+        )
+        updateTrip({ ...trip, destinations: dests })
+      })
+      .catch(() => {})
     return () => { cancelled = true }
-  }, [category?.id, category?.location, category?.name])
+  }, [category?.id, category?.location, category?.name, category?.headerImageUrls?.length, trip?.id, updateTrip])
 
   const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(category?.location || category?.name || '')}`
 
@@ -97,18 +106,55 @@ export default function GeneratedPlanView({ category, trip, onPlanSelect }) {
           </div>
         )}
 
-        {destinationImage?.url && (
-          <div className="mb-6 rounded-lg overflow-hidden shadow-md relative">
-            <img
-              src={destinationImage.url}
-              alt={category?.location || category?.name}
-              className="w-full h-64 object-cover"
-            />
-            <div className="absolute bottom-0 left-0 bg-black/60 text-white text-xs px-2 py-1 rounded-tr-lg backdrop-blur-sm">
-              {destinationImage.query || category?.location}
+        {(() => {
+          const urls = category?.headerImageUrls
+          const idx = (category?.headerImageIndex ?? 0) % (urls?.length || 1)
+          const currentUrl = urls?.length ? urls[idx] : null
+          const query = category?.location || category?.name
+          const canCycle = (urls?.length ?? 0) > 1
+          const cycle = (delta) => {
+            if (!urls?.length || !updateTrip || !trip) return
+            const next = (idx + delta + urls.length) % urls.length
+            const dests = (trip.destinations || []).map((d) =>
+              d.id === category.id ? { ...d, headerImageIndex: next } : d
+            )
+            updateTrip({ ...trip, destinations: dests })
+          }
+          if (!currentUrl) return null
+          return (
+            <div className="mb-6 rounded-lg overflow-hidden shadow-md relative group">
+              <img
+                key={currentUrl}
+                src={currentUrl}
+                alt={query}
+                className="w-full h-64 object-cover animate-fade-in"
+              />
+              {canCycle && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => cycle(-1)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                    aria-label="Previous image"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cycle(1)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                    aria-label="Next image"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                </>
+              )}
+              <div className="absolute bottom-0 left-0 bg-black/60 text-white text-xs px-2 py-1 rounded-tr-lg backdrop-blur-sm">
+                {query}
+              </div>
             </div>
-          </div>
-        )}
+          )
+        })()}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

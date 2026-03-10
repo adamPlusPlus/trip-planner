@@ -1,13 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
 import { fetchWeather } from '../utils/api'
-import { getLocalHeaderImage } from '../services/imageService'
+import { getLocalHeaderImage, getImagesForLocation } from '../services/imageService'
 import { createDestination, isTripDataComplete } from '../domain/trip'
 import { getDefaultPlansForDestination } from '../data/planTemplate'
 import ContextMenu from './ContextMenu'
+import LocationAutocomplete from './LocationAutocomplete'
 
 const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, firstCard }) => {
   const [currentPage, setCurrentPage] = useState(1)
-  const [destinationImages, setDestinationImages] = useState({})
   const [destinationWeather, setDestinationWeather] = useState({})
   const [linkOriginId, setLinkOriginId] = useState(null)
   const [contextMenu, setContextMenu] = useState(null)
@@ -15,6 +15,7 @@ const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, fir
   const [editingId, setEditingId] = useState(null)
   const [addName, setAddName] = useState('')
   const [addLocation, setAddLocation] = useState('')
+  const [addCoords, setAddCoords] = useState(null)
   const loadedImagesRef = useRef(new Set())
   const itemsPerPage = 6
 
@@ -58,55 +59,86 @@ const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, fir
     updateTrip({ ...trip, destinations: next })
   }
 
+  const handleRebuildDestination = (dest) => {
+    setContextMenu(null)
+    loadedImagesRef.current.delete(dest.id)
+    const rebuilt = {
+      ...dest,
+      plans: getDefaultPlansForDestination(dest.id),
+      headerImageUrls: undefined,
+      headerImageIndex: undefined,
+      thingsToSee: undefined,
+      route: undefined,
+      accommodations: undefined,
+    }
+    const next = destinations.map((d) => (d.id === dest.id ? rebuilt : d))
+    updateTrip({ ...trip, destinations: next })
+  }
+
   const handleAddDestination = () => {
     if (!addName.trim() || !tripDataComplete) return
     const tripData = { origin: trip.origin, settings: trip.settings }
     const newDest = createDestination({
       name: addName.trim(),
       location: addLocation.trim() || null,
+      coords: addCoords || null,
       budgetSlice: tripData.settings?.costTarget != null ? Math.floor(tripData.settings.costTarget / Math.max(1, destinations.length + 1)) : null,
     })
     newDest.plans = getDefaultPlansForDestination(newDest.id)
     updateTrip({ ...trip, destinations: [...destinations, newDest] })
     setAddName('')
     setAddLocation('')
+    setAddCoords(null)
     setShowAddForm(false)
   }
 
-  const handleSaveEdit = (dest, name, location) => {
+  const handleSaveEdit = (dest, name, location, coords) => {
     const next = destinations.map((d) =>
-      d.id === dest.id ? { ...d, name: name.trim(), location: location?.trim() || null } : d
+      d.id === dest.id ? { ...d, name: name.trim(), location: location?.trim() || null, coords: coords || d.coords } : d
     )
     updateTrip({ ...trip, destinations: next })
     setEditingId(null)
   }
 
-  // Load images for all destinations - use local images directly (no API calls, instant)
+  // Load destination header images once: use saved headerImageUrls, or fetch 5 and save to trip (batch)
   useEffect(() => {
-    const loadImages = () => {
-      // Only load images for destinations we haven't loaded yet
-      const destinationsToLoad = destinations.filter(dest => !loadedImagesRef.current.has(dest.id))
-      
-      if (destinationsToLoad.length === 0) return
+    const toLoad = destinations.filter(
+      (dest) => !dest.headerImageUrls?.length && !loadedImagesRef.current.has(dest.id)
+    )
+    if (toLoad.length === 0) return
 
-      // Mark as loaded
-      destinationsToLoad.forEach(dest => loadedImagesRef.current.add(dest.id))
-
-      // Use local header images directly - no async needed, instant
-      const newImages = {}
-      destinationsToLoad.forEach(dest => {
+    const run = async () => {
+      const updates = new Map() // id -> { headerImageUrls, headerImageIndex }
+      for (const dest of toLoad) {
+        loadedImagesRef.current.add(dest.id)
         const localImagePath = getLocalHeaderImage(dest.id)
         if (localImagePath) {
-          newImages[dest.id] = { url: localImagePath, query: dest.name }
+          updates.set(dest.id, { headerImageUrls: [localImagePath], headerImageIndex: 0 })
+          continue
         }
-      })
-
-      if (Object.keys(newImages).length > 0) {
-        setDestinationImages(prev => ({ ...prev, ...newImages }))
+        const locationOrName = dest.location || dest.name
+        if (!locationOrName) continue
+        try {
+          const result = await getImagesForLocation(locationOrName, {
+            destinationId: dest.id,
+            limit: 5,
+          })
+          if (result?.urls?.length) {
+            updates.set(dest.id, { headerImageUrls: result.urls, headerImageIndex: 0 })
+          }
+        } catch (_) {}
+      }
+      if (updates.size > 0) {
+        updateTrip({
+          ...trip,
+          destinations: destinations.map((d) => {
+            const u = updates.get(d.id)
+            return u ? { ...d, ...u } : d
+          }),
+        })
       }
     }
-
-    loadImages()
+    run()
   }, [destinations])
 
   // Load weather data for all destinations to check for snow
@@ -114,7 +146,9 @@ const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, fir
     const loadWeather = async () => {
       const weatherPromises = destinations.map(async (dest) => {
         try {
-          const weatherData = await fetchWeather(dest.location, dest.coords, dateRange)
+          const locationOrName = dest.location || dest.name
+          if (!locationOrName) return { id: dest.id, hasSnow: false }
+          const weatherData = await fetchWeather(locationOrName, dest.coords, dateRange)
           // Check if any day in the forecast has snow
           const hasSnow = weatherData.daily?.some(day => day.snow > 0) || false
           return { id: dest.id, hasSnow }
@@ -147,6 +181,7 @@ const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, fir
   const contextMenuItems = contextMenu
     ? [
         { id: 'edit', label: 'Edit', onClick: () => { setEditingId(contextMenu.dest.id); setContextMenu(null); } },
+        { id: 'rebuild', label: 'Rebuild destination', onClick: () => handleRebuildDestination(contextMenu.dest) },
         { id: 'remove', label: 'Remove', onClick: () => handleRemove(contextMenu.dest) },
         { id: 'set-origin', label: 'Set as origin for…', onClick: () => { setLinkOriginId(contextMenu.dest.id); setContextMenu(null); } },
         ...(contextMenu.dest.originDestinationId
@@ -183,16 +218,16 @@ const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, fir
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Location (optional)</label>
-              <input
-                type="text"
+              <LocationAutocomplete
                 value={addLocation}
-                onChange={(e) => setAddLocation(e.target.value)}
-                placeholder="e.g. City, State"
-                className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                onChange={setAddLocation}
+                onSelect={({ location, coords }) => { setAddLocation(location); setAddCoords(coords); }}
+                placeholder="City, state or country"
+                className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full min-w-[200px]"
               />
             </div>
             <button type="button" onClick={handleAddDestination} disabled={!tripDataComplete} className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-md hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed">Add</button>
-            <button type="button" onClick={() => { setShowAddForm(false); setAddName(''); setAddLocation(''); }} className="px-3 py-1.5 text-gray-600 text-sm">Cancel</button>
+            <button type="button" onClick={() => { setShowAddForm(false); setAddName(''); setAddLocation(''); setAddCoords(null); }} className="px-3 py-1.5 text-gray-600 text-sm">Cancel</button>
           </div>
         ) : (
           <button
@@ -230,22 +265,41 @@ const CategoryView = ({ trip, destinations, onSelect, dateRange, updateTrip, fir
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
         {firstCard && currentPage === 1 && <div>{firstCard}</div>}
-        {currentDestinations.map((destination) => (
-          <DestinationCard
-            key={destination.id}
-            destination={destination}
-            originName={getOriginName(destination)}
-            imageUrl={destinationImages[destination.id]}
-            hasSnow={destinationWeather[destination.id]?.hasSnow || false}
-            onSelect={() => handleCardClick(destination)}
-            onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dest: destination }); }}
-            linkMode={!!linkOriginId}
-            isLinkSource={linkOriginId === destination.id}
-            editing={editingId === destination.id}
-            onSaveEdit={(name, location) => handleSaveEdit(destination, name, location)}
-            onCancelEdit={() => setEditingId(null)}
-          />
-        ))}
+        {currentDestinations.map((destination) => {
+          const urls = destination.headerImageUrls
+          const idx = (destination.headerImageIndex ?? 0) % (urls?.length || 1)
+          const currentUrl = urls?.length ? urls[idx] : null
+          const canCycle = (urls?.length ?? 0) > 1
+          const cycle = (delta) => {
+            if (!urls?.length) return
+            const next = (idx + delta + urls.length) % urls.length
+            updateTrip({
+              ...trip,
+              destinations: destinations.map((d) =>
+                d.id === destination.id ? { ...d, headerImageIndex: next } : d
+              ),
+            })
+          }
+          return (
+            <DestinationCard
+              key={destination.id}
+              destination={destination}
+              originName={getOriginName(destination)}
+              imageUrl={currentUrl ? { url: currentUrl, query: destination.name } : null}
+              canCycle={canCycle}
+              onCyclePrev={() => cycle(-1)}
+              onCycleNext={() => cycle(1)}
+              hasSnow={destinationWeather[destination.id]?.hasSnow || false}
+              onSelect={() => handleCardClick(destination)}
+              onContextMenu={(e) => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, dest: destination }); }}
+              linkMode={!!linkOriginId}
+              isLinkSource={linkOriginId === destination.id}
+              editing={editingId === destination.id}
+              onSaveEdit={(name, location, coords) => handleSaveEdit(destination, name, location, coords)}
+              onCancelEdit={() => setEditingId(null)}
+            />
+          )
+        })}
       </div>
       )}
       <ContextMenu position={contextMenu ? { x: contextMenu.x, y: contextMenu.y } : null} items={contextMenuItems} onClose={() => setContextMenu(null)} />
@@ -293,6 +347,9 @@ const DestinationCard = ({
   destination,
   originName,
   imageUrl,
+  canCycle,
+  onCyclePrev,
+  onCycleNext,
   hasSnow,
   onSelect,
   onContextMenu,
@@ -304,12 +361,14 @@ const DestinationCard = ({
 }) => {
   const [editName, setEditName] = useState(destination.name)
   const [editLocation, setEditLocation] = useState(destination.location || '')
+  const [editCoords, setEditCoords] = useState(destination.coords || null)
   useEffect(() => {
     if (editing) {
       setEditName(destination.name)
       setEditLocation(destination.location || '')
+      setEditCoords(destination.coords || null)
     }
-  }, [editing, destination.id, destination.name, destination.location])
+  }, [editing, destination.id, destination.name, destination.location, destination.coords])
 
   const imageData = typeof imageUrl === 'string' ? { url: imageUrl, query: destination.name } : imageUrl
   const displayQuery = imageData?.query || destination.name
@@ -325,15 +384,18 @@ const DestinationCard = ({
             placeholder="Name"
             className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
           />
-          <input
-            type="text"
-            value={editLocation}
-            onChange={(e) => setEditLocation(e.target.value)}
-            placeholder="Location (optional)"
-            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-          />
+          <div>
+            <label className="block text-xs text-gray-500 mb-0.5">Location (optional)</label>
+            <LocationAutocomplete
+              value={editLocation}
+              onChange={setEditLocation}
+              onSelect={({ location, coords }) => { setEditLocation(location); setEditCoords(coords); }}
+              placeholder="City, state or country"
+              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            />
+          </div>
           <div className="flex gap-2">
-            <button type="button" onClick={() => onSaveEdit(editName, editLocation)} className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-md">Save</button>
+            <button type="button" onClick={() => onSaveEdit(editName, editLocation, editCoords)} className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-md">Save</button>
             <button type="button" onClick={onCancelEdit} className="px-3 py-1.5 text-gray-600 text-sm">Cancel</button>
           </div>
         </div>
@@ -347,38 +409,51 @@ const DestinationCard = ({
       onContextMenu={onContextMenu}
       className={`bg-white rounded-lg shadow-md hover:shadow-xl transition-shadow overflow-hidden border cursor-pointer ${linkMode ? (isLinkSource ? 'border-primary-500 ring-2 ring-primary-300' : 'border-gray-200') : 'border-gray-200'}`}
     >
-      <div className="h-48 bg-gradient-to-br from-primary-400 to-primary-600 relative overflow-hidden">
+      <div className="h-48 bg-gradient-to-br from-primary-400 to-primary-600 relative overflow-hidden group">
         {imageData && imageData.url && (
           <img
+            key={imageData.url}
             src={imageData.url}
             alt={destination.name}
-            className="w-full h-full object-cover absolute inset-0"
+            className="w-full h-full object-cover absolute inset-0 animate-fade-in"
             loading="lazy"
             onLoad={(e) => {
-              // Image loaded successfully, hide fallback
               const fallback = e.target.parentElement.querySelector('.fallback-letter')
-              if (fallback) {
-                fallback.style.display = 'none'
-              }
+              if (fallback) fallback.style.display = 'none'
             }}
             onError={(e) => {
-              // Image failed, show fallback
-              console.error('Image failed to load:', imageData.url)
               e.target.style.display = 'none'
               const fallback = e.target.parentElement.querySelector('.fallback-letter')
-              if (fallback) {
-                fallback.style.display = 'flex'
-              }
+              if (fallback) fallback.style.display = 'flex'
             }}
           />
         )}
-        <div 
+        {canCycle && (
+          <>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onCyclePrev?.() }}
+              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+              aria-label="Previous image"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            </button>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onCycleNext?.() }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+              aria-label="Next image"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+          </>
+        )}
+        <div
           className="text-white text-4xl font-bold fallback-letter flex items-center justify-center absolute inset-0 bg-gradient-to-br from-primary-400 to-primary-600"
-          style={{ display: (imageData && imageData.url) ? 'flex' : 'flex' }}
+          style={{ display: (imageData && imageData.url) ? 'none' : 'flex' }}
         >
           {destination.name.charAt(0)}
         </div>
-        {/* Image label - bottom left with exact search query */}
         <div className="absolute bottom-0 left-0 bg-black/60 text-white text-xs px-2 py-1 rounded-tr-lg backdrop-blur-sm">
           {displayQuery}
         </div>

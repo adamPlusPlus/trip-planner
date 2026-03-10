@@ -13,8 +13,10 @@ export async function fetchLocationImage(location, destinationId = null) {
   return getImageForLocation(location, { destinationId })
 }
 
-export async function fetchAttractionImage(attractionName) {
-  const result = await getImageForLocation(attractionName)
+export async function fetchAttractionImage(attractionName, location = null) {
+  const result = location
+    ? await getImageForLocation(location, { poi: attractionName })
+    : await getImageForLocation(attractionName)
   return result ? { url: result.url, query: result.query || attractionName } : null
 }
 

@@ -30,6 +30,8 @@
  * @property {PlanSection[]} [sections]
  * @property {{ id: string, name: string, path: string }[]} [plans] - legacy plan list (id, name, path)
  * @property {string} [originDestinationId] - id of another destination that is the leg origin (user-defined link)
+ * @property {string[]} [headerImageUrls] - first 5 image URLs for destination header (saved after first fetch)
+ * @property {number} [headerImageIndex] - which of the 5 to show (0-4), persisted between screens
  * @property {Object} [thingsToSee] - { attractions: Attraction[], pointsOfInterest: POI[] }
  * @property {Object} [route] - { segments, overnightStops, gasCostCents, foodCostCents }
  * @property {Object} [accommodations] - { atDestination: Accommodation[], onRoute: Accommodation[] }
@@ -122,6 +124,8 @@ export function createDestination(overrides = {}) {
     sections: overrides.sections ?? [],
     plans: overrides.plans ?? null,
     originDestinationId: overrides.originDestinationId ?? null,
+    headerImageUrls: overrides.headerImageUrls ?? undefined,
+    headerImageIndex: overrides.headerImageIndex ?? undefined,
     thingsToSee: overrides.thingsToSee ?? undefined,
     route: overrides.route ?? undefined,
     accommodations: overrides.accommodations ?? undefined,

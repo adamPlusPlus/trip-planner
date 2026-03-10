@@ -1,6 +1,7 @@
 // GET /api/places?location=...&query=...&type=attraction|poi&limit=10
 
 import { fetchPlacesFromGoogle, fetchOnePlaceFallback } from '../lib/places.js'
+import { fetchPlacesFromDuckDuckGo } from '../lib/duckduckgoPlaces.js'
 import { resolveImageUrl } from '../lib/imageProvider.js'
 
 export function register(app) {
@@ -28,7 +29,9 @@ export function register(app) {
           return res.json({ [key]: [one] })
         }
       }
-      res.json({ attractions: [], pointsOfInterest: [] })
+      const fromDdg = await fetchPlacesFromDuckDuckGo(location.trim(), type, limit)
+      const key = type === 'attraction' ? 'attractions' : 'pointsOfInterest'
+      return res.json({ [key]: fromDdg })
     } catch (e) {
       console.error(e)
       res.status(500).json({ error: 'Places fetch failed' })

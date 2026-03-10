@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import ContextMenu from './ContextMenu.jsx'
+import LocationAutocomplete from './LocationAutocomplete.jsx'
 
 const AUTOSAVE_MS = 800
 
@@ -10,6 +11,7 @@ const AUTOSAVE_MS = 800
 export default function TripDataView({ trip, updateTrip, onBack }) {
   const [originName, setOriginName] = useState(trip?.origin?.name ?? '')
   const [originLocation, setOriginLocation] = useState(trip?.origin?.location ?? '')
+  const [originCoords, setOriginCoords] = useState(trip?.origin?.coords ?? null)
   const [dateStart, setDateStart] = useState(trip?.settings?.dateRange?.start ?? '')
   const [dateEnd, setDateEnd] = useState(trip?.settings?.dateRange?.end ?? '')
   const [costTarget, setCostTarget] = useState(trip?.settings?.costTarget ?? '')
@@ -24,6 +26,7 @@ export default function TripDataView({ trip, updateTrip, onBack }) {
   useEffect(() => {
     setOriginName(trip?.origin?.name ?? '')
     setOriginLocation(trip?.origin?.location ?? '')
+    setOriginCoords(trip?.origin?.coords ?? null)
     setDateStart(trip?.settings?.dateRange?.start ?? '')
     setDateEnd(trip?.settings?.dateRange?.end ?? '')
     const ct = trip?.settings?.costTarget
@@ -42,7 +45,7 @@ export default function TripDataView({ trip, updateTrip, onBack }) {
       return
     }
     const t = setTimeout(() => {
-      const origin = (originName.trim() || originLocation.trim()) ? { name: originName.trim() || null, location: originLocation.trim() || null } : null
+      const origin = (originName.trim() || originLocation.trim()) ? { name: originName.trim() || null, location: originLocation.trim() || null, coords: originCoords || undefined } : null
       const cost = noBudget ? null : (costTarget.trim() ? Number(costTarget) : undefined)
       const settings = {
         ...trip.settings,
@@ -56,7 +59,7 @@ export default function TripDataView({ trip, updateTrip, onBack }) {
       updateTrip({ ...trip, origin, settings })
     }, AUTOSAVE_MS)
     return () => clearTimeout(t)
-  }, [originName, originLocation, dateStart, dateEnd, costTarget, noBudget, peopleCount, peopleNames, maxDrivingHours, overnightFlexibility])
+  }, [originName, originLocation, originCoords, dateStart, dateEnd, costTarget, noBudget, peopleCount, peopleNames, maxDrivingHours, overnightFlexibility])
 
   const syncPeopleNamesToCount = (count) => {
     const n = Math.max(0, Number(count) || 0)
@@ -69,7 +72,7 @@ export default function TripDataView({ trip, updateTrip, onBack }) {
   }
 
   const handleSave = () => {
-    const origin = (originName.trim() || originLocation.trim()) ? { name: originName.trim() || null, location: originLocation.trim() || null } : null
+    const origin = (originName.trim() || originLocation.trim()) ? { name: originName.trim() || null, location: originLocation.trim() || null, coords: originCoords || undefined } : null
     const cost = noBudget ? null : (costTarget.trim() ? Number(costTarget) : undefined)
     const settings = {
       ...trip.settings,
@@ -112,12 +115,11 @@ export default function TripDataView({ trip, updateTrip, onBack }) {
             </div>
             <div>
               <label className="block text-xs text-gray-500 mb-1">Location</label>
-              <input
-                type="text"
+              <LocationAutocomplete
                 value={originLocation}
-                onChange={(e) => setOriginLocation(e.target.value)}
-                onBlur={handleSave}
-                placeholder="Address or place"
+                onChange={setOriginLocation}
+                onSelect={({ location, coords }) => { setOriginLocation(location); setOriginCoords(coords); }}
+                placeholder="City, state or country"
                 className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
               />
             </div>

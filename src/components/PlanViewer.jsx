@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { fetchWeather } from '../utils/api'
 import { getPlanContent } from '../utils/dataLoader'
-import { shouldShowImageForHeader, getImageForHeader, getLocalHeaderImage } from '../services/imageService'
+import { shouldShowImageForHeader, getImageForHeader, getLocalHeaderImage, getImagesForLocation } from '../services/imageService'
 import { parseCheckboxContent, rebuildContent, formatForAppleNotes } from '../utils/shoppingList'
 import GeneratedPlanView from './GeneratedPlanView'
 import { generateSectionContent } from '../utils/planGenerators'
@@ -240,17 +240,39 @@ const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip 
   }
 
   const loadWeatherAndImages = async () => {
-    if (!category?.location) return
+    const locationOrName = category?.location || category?.name
+    if (!locationOrName) return
 
     try {
-      // Load weather (async - needed for API call)
-      const weatherData = await fetchWeather(category.location, category.coords, dateRange)
+      const weatherData = await fetchWeather(locationOrName, category.coords, dateRange)
       setWeather(weatherData)
 
-      // Use local header image directly (no API call needed)
+      // Use saved header images first (single fetch, then persisted)
+      const urls = category?.headerImageUrls
+      if (urls?.length) {
+        const idx = (category.headerImageIndex ?? 0) % urls.length
+        setImages(prev => ({ ...prev, [locationOrName]: { url: urls[idx], query: locationOrName } }))
+        return
+      }
       const localImagePath = getLocalHeaderImage(category.id || category.name)
       if (localImagePath) {
-        setImages(prev => ({ ...prev, [category.location]: { url: localImagePath, query: category.location } }))
+        setImages(prev => ({ ...prev, [locationOrName]: { url: localImagePath, query: locationOrName } }))
+        if (updateTrip && trip) {
+          const dests = (trip.destinations || []).map((d) =>
+            d.id === category.id ? { ...d, headerImageUrls: [localImagePath], headerImageIndex: 0 } : d
+          )
+          updateTrip({ ...trip, destinations: dests })
+        }
+        return
+      }
+      // Fetch once, save to trip, then use
+      const result = await getImagesForLocation(locationOrName, { destinationId: category.id, limit: 5 })
+      if (result?.urls?.length && updateTrip && trip) {
+        const dests = (trip.destinations || []).map((d) =>
+          d.id === category.id ? { ...d, headerImageUrls: result.urls, headerImageIndex: 0 } : d
+        )
+        updateTrip({ ...trip, destinations: dests })
+        setImages(prev => ({ ...prev, [locationOrName]: { url: result.urls[0], query: result.query || locationOrName } }))
       }
     } catch (error) {
       console.error('Error loading weather/images:', error)
@@ -331,9 +353,30 @@ const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip 
   if (!plan && category) {
     const hasGeneratedPlan = !category.plans?.length || category.plans.some((p) => !p.path)
     if (hasGeneratedPlan) {
-      return <GeneratedPlanView category={category} trip={trip} onPlanSelect={onPlanSelect} />
+      return (
+        <GeneratedPlanView
+          category={category}
+          trip={trip}
+          onPlanSelect={onPlanSelect}
+          updateTrip={updateTrip}
+        />
+      )
     }
     const mapsUrl = getGoogleMapsUrl(category.location || category.name)
+    const headerUrls = category?.headerImageUrls
+    const headerIdx = (category?.headerImageIndex ?? 0) % (headerUrls?.length || 1)
+    const currentImage = headerUrls?.length
+      ? { url: headerUrls[headerIdx], query: category.location || category.name }
+      : images[category.location] || images[category?.name]
+    const canCycleHeader = (headerUrls?.length ?? 0) > 1
+    const cycleHeader = (delta) => {
+      if (!headerUrls?.length || !updateTrip || !trip) return
+      const next = (headerIdx + delta + headerUrls.length) % headerUrls.length
+      const dests = (trip.destinations || []).map((d) =>
+        d.id === category.id ? { ...d, headerImageIndex: next } : d
+      )
+      updateTrip({ ...trip, destinations: dests })
+    }
     return (
       <div>
         <div className="mb-8">
@@ -394,16 +437,36 @@ const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip 
             </div>
           )}
 
-          {images[category.location] && images[category.location].url && (
-            <div className="mb-6 rounded-lg overflow-hidden shadow-md relative">
+          {currentImage?.url && (
+            <div className="mb-6 rounded-lg overflow-hidden shadow-md relative group">
               <img
-                src={images[category.location].url}
-                alt={category.location}
-                className="w-full h-64 object-cover"
+                key={currentImage.url}
+                src={currentImage.url}
+                alt={category.location || category.name}
+                className="w-full h-64 object-cover animate-fade-in"
               />
-              {/* Image label - bottom left with exact search query */}
+              {canCycleHeader && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => cycleHeader(-1)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                    aria-label="Previous image"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cycleHeader(1)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                    aria-label="Next image"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                  </button>
+                </>
+              )}
               <div className="absolute bottom-0 left-0 bg-black/60 text-white text-xs px-2 py-1 rounded-tr-lg backdrop-blur-sm">
-                {images[category.location].query || category.location}
+                {currentImage.query || category.location}
               </div>
             </div>
           )}
@@ -504,6 +567,7 @@ const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip 
               onTogglePerson={handleTogglePerson}
             />
           ) : !['things-to-see', 'potential-routes', 'accommodations', 'budget', 'weather', 'pre-shopping-packing'].includes(sectionType) ? (
+            content.trim() ? (
             <ReactMarkdown 
               remarkPlugins={[remarkGfm]}
               components={{
@@ -557,7 +621,7 @@ const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip 
                 return renderHeadingWithImage(headingText, 4, children, props)
               },
               img: ({ node, ...props }) => (
-                <div className="relative my-4 w-full max-w-2xl mx-auto">
+                <span className="relative my-4 block w-full max-w-2xl mx-auto">
                   <img 
                     {...props} 
                     className="rounded-lg shadow-md w-full"
@@ -566,18 +630,20 @@ const PlanViewer = ({ trip, category, plan, onPlanSelect, dateRange, updateTrip 
                       e.target.style.display = 'none'
                     }}
                   />
-                  {/* Image label - bottom left */}
                   {props.alt && (
-                    <div className="absolute bottom-0 left-0 bg-black/60 text-white text-xs px-2 py-1 rounded-tr-lg backdrop-blur-sm">
+                    <span className="absolute bottom-0 left-0 bg-black/60 text-white text-xs px-2 py-1 rounded-tr-lg backdrop-blur-sm">
                       {props.alt}
-                    </div>
+                    </span>
                   )}
-                </div>
+                </span>
               ),
             }}
           >
             {content}
           </ReactMarkdown>
+            ) : (
+              <p className="text-gray-500 italic">This section has no content yet. Use the links above to explore and add notes.</p>
+            )
           ) : null}
         </div>
       </div>

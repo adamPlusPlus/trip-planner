@@ -1,8 +1,8 @@
 // Single image API: getImageForLocation, getImageForHeader, shouldShowImageForHeader.
-// Chain: local maps -> (later backend) -> Google search -> curated -> Pexels.
+// Query format (same idea as rom-browser/media-server cover search): [location city state country] [poi if relevant] [keyword default nature].
+// Chain: local header -> backend /api/image (DuckDuckGo, same logic as media-server) -> curated -> Pexels.
 
 import { getLocationImage } from '../utils/locationImages.js'
-import { getLocationImageFromSearch } from '../utils/googleImageSearch.js'
 import {
   shouldShowImageForHeader as shouldShowHeader,
   getImageForHeader as getHeaderImagePath,
@@ -13,11 +13,23 @@ const destinationHeaderImages = {
   'pagosa-springs': '/images/headers/pagosa-springs.jpg',
 }
 
-const destinationSearchTerms = {
-  'pagosa-springs': 'Pagosa Springs Colorado hot springs mountains nature',
-}
-
 const PEXELS_API_KEY = 'UILCwPuEaQGmtNbbdIXdZha7hexD1IwRYjz0QO027BjqvkJxG0clEjtO'
+
+const DEFAULT_IMAGE_KEYWORD = 'nature'
+
+/**
+ * Build DuckDuckGo (and fallback) image search query.
+ * Format: [location in city state country] [poi (if relevant)] [keyword (default "nature")].
+ * Same conceptual pattern as rom-browser/media-server buildCoverSearchQuery (location + optional context + suffix).
+ * @param {string} location - Location string (e.g. "Pagosa Springs, CO", "Houston, TX")
+ * @param {{ poi?: string, keyword?: string }} [options] - poi = point of interest (e.g. attraction name); keyword defaults to "nature"
+ * @returns {string}
+ */
+export function buildLocationImageQuery(location, options = {}) {
+  const { poi, keyword = DEFAULT_IMAGE_KEYWORD } = options
+  const parts = [location, poi, keyword].filter(Boolean).map((s) => String(s).trim()).filter(Boolean)
+  return parts.length ? parts.join(' ') : keyword
+}
 
 async function fetchPexelsImage(searchTerm) {
   if (!PEXELS_API_KEY) return null
@@ -40,42 +52,33 @@ async function fetchPexelsImage(searchTerm) {
 
 /**
  * Resolve image for a location (category card or general). Returns { url, query } or null.
- * Tries backend /api/image first, then local maps, then Google/Pexels.
- * @param {string} location - Location name
- * @param {{ destinationId?: string }} [options]
+ * Uses query format: [location] [poi] [keyword]. Tries backend /api/image (DuckDuckGo) first, then curated, then Pexels.
+ * @param {string} location - Location name (city, state, country when available)
+ * @param {{ destinationId?: string, poi?: string, keyword?: string }} [options]
  */
 export async function getImageForLocation(location, options = {}) {
-  const { destinationId } = options
+  const { destinationId, poi, keyword = DEFAULT_IMAGE_KEYWORD } = options
 
   if (destinationId && destinationHeaderImages[destinationId]) {
     return { url: destinationHeaderImages[destinationId], query: location }
   }
 
+  const locationStr = (location && String(location).trim()) || ''
+  const query = buildLocationImageQuery(locationStr, { poi, keyword })
+
   try {
-    const res = await fetch(`/api/image?query=${encodeURIComponent(location)}`)
-    if (res.ok) {
-      const data = await res.json()
-      if (data.url) return { url: data.url, query: location }
+    const res = await fetch(`/api/image?query=${encodeURIComponent(query)}`)
+    if (res.ok || res.status === 404) {
+      const data = res.ok ? await res.json() : { url: null }
+      if (data?.url) return { url: data.url, query }
     }
   } catch (_) {}
 
-  const googleResult = await getLocationImageFromSearch(location)
-  if (googleResult?.url) {
-    return { url: googleResult.url, query: googleResult.query || location }
-  }
+  const curated = getLocationImage(locationStr)
+  if (curated) return { url: curated, query: locationStr }
 
-  const curated = getLocationImage(location)
-  if (curated) return { url: curated, query: location }
-
-  let searchTerm =
-    destinationId && destinationSearchTerms[destinationId]
-      ? destinationSearchTerms[destinationId]
-      : location.toLowerCase().includes('pagosa')
-        ? destinationSearchTerms['pagosa-springs']
-        : `${(location.split(',')[0] || location).trim()} nature`
-  if (!searchTerm.includes('nature')) searchTerm = `${searchTerm} nature`
-  const imageUrl = await fetchPexelsImage(searchTerm)
-  if (imageUrl) return { url: imageUrl, query: searchTerm }
+  const imageUrl = await fetchPexelsImage(query)
+  if (imageUrl) return { url: imageUrl, query }
 
   return null
 }
@@ -87,6 +90,40 @@ export async function getImageForLocation(location, options = {}) {
  */
 export function getLocalHeaderImage(destinationId) {
   return destinationHeaderImages[destinationId] || null
+}
+
+/**
+ * Fetch up to 5 image URLs for a location (for destination header cycling).
+ * Uses backend /api/images when available; falls back to /api/image (single) so images work even if backend wasn't restarted.
+ * @param {string} location - Location name
+ * @param {{ destinationId?: string, limit?: number }} [options]
+ * @returns {Promise<{ urls: string[], query: string } | null>}
+ */
+export async function getImagesForLocation(location, options = {}) {
+  const { destinationId, limit = 5 } = options
+
+  if (destinationId && destinationHeaderImages[destinationId]) {
+    return { urls: [destinationHeaderImages[destinationId]], query: location }
+  }
+
+  const locationStr = (location && String(location).trim()) || ''
+  const query = buildLocationImageQuery(locationStr)
+
+  try {
+    const res = await fetch(
+      `/api/images?query=${encodeURIComponent(query)}&limit=${Math.min(limit, 10)}`
+    )
+    if (res.ok) {
+      const data = await res.json().catch(() => null)
+      const urls = Array.isArray(data?.urls) ? data.urls : []
+      if (urls.length > 0) return { urls, query: locationStr || query }
+    }
+  } catch (_) {}
+
+  // Fallback: use single-image API (/api/image) + curated + Pexels so images work even when /api/images returns 404
+  const single = await getImageForLocation(locationStr || location, { destinationId, keyword: DEFAULT_IMAGE_KEYWORD })
+  if (single?.url) return { urls: [single.url], query: single.query || locationStr || query }
+  return null
 }
 
 export const shouldShowImageForHeader = shouldShowHeader

@@ -1,5 +1,7 @@
 // Places search: Google Places API when GOOGLE_PLACES_API_KEY is set; otherwise fallback (search + image).
 
+import { buildLocationImageQuery } from './buildImageQuery.js'
+
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || ''
 
 /**
@@ -75,7 +77,8 @@ export async function fetchOnePlaceFallback(location, query, resolveImageUrl) {
   const searchQuery = `${name} ${location}`
   const mapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(searchQuery)}`
   const searchUrl = `https://duckduckgo.com/?q=${encodeURIComponent(searchQuery)}`
-  const imageUrl = resolveImageUrl ? await resolveImageUrl(searchQuery) : null
+  const imageQuery = buildLocationImageQuery((location || '').trim(), { poi: name })
+  const imageUrl = resolveImageUrl ? await resolveImageUrl(imageQuery) : null
   return {
     id: `fallback-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     name,
